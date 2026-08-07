@@ -1,0 +1,35 @@
+# SecAssist — LibreChat configuration.
+# One custom endpoint: SecRouter, reached through the auth proxy (compose service
+# `secrouter-proxy`). The proxy injects the svc-secassist bearer; here we forward the
+# signed-in user so SecRouter governs + audits per end-user (its delegatingSubjects path).
+#
+# The `version` is LibreChat's config-schema version — bump to match your pinned image if
+# LibreChat warns about it (see LIBRECHAT_VERSION in .env / compose.yaml).
+version: 1.2.8
+cache: true
+
+endpoints:
+  custom:
+    - name: "SecRouter"
+      # The proxy overrides Authorization with the fresh service token, so this apiKey is a
+      # required-but-unused placeholder (LibreChat needs a non-empty value).
+      apiKey: "managed-by-secrouter-proxy"
+      baseURL: "http://secrouter-proxy:8088/v1"
+      # Forward the signed-in user to the gateway. A configured Authorization header would
+      # override the proxy's, so we send ONLY identity headers here; the proxy owns auth.
+      # SecRouter reads x-sec-acting-user (its actingUserHeader) and attributes the request
+      # to this person. (LibreChat exposes the user's email/id, not their IdP groups, as a
+      # header template today — per-user policy keys on the email; see docs/governance.md.)
+      headers:
+        x-sec-acting-user: "{{LIBRECHAT_USER_EMAIL}}"
+        x-secassist-user-id: "{{LIBRECHAT_USER_ID}}"
+      # `fetch: true` asks the gateway for THIS user's allowed models (the auth-aware proxy
+      # returns a per-user /v1/models list). `default` is only a fallback if the fetch fails.
+      models:
+        default:
+          - "gpt-oss-120b"
+        fetch: true
+      titleConvo: true
+      titleModel: "current_model"
+      # SecRouter is OpenAI-compatible; forward params as-is.
+      forcePrompt: false

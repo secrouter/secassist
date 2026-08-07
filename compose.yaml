@@ -1,0 +1,95 @@
+# SecAssist — a governed AI chat UI (LibreChat) for the SecRouter suite.
+# Users sign in with SSO (SecSSO/OIDC); every model call is routed through SecRouter's
+# auth proxy so it is governed, budgeted, and audited PER END-USER (see docs/governance.md).
+#
+#   cp .env.example .env && edit     # set the secrets it asks for (+ SecSSO / SecRouter refs)
+#   ./bootstrap/secassist.sh up
+name: secassist
+
+services:
+  mongodb:
+    image: mongo:${MONGO_VERSION:-7.0.14}
+    restart: unless-stopped
+    command: mongod --noauth --bind_ip_all
+    volumes:
+      - mongo:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  meilisearch:
+    image: getmeili/meilisearch:${MEILI_VERSION:-v1.12.3}
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in .env}
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_ENV: production
+    volumes:
+      - meili:/meili_data
+
+  # The "auth-aware proxy" — mints/refreshes the svc-secassist client-credentials token
+  # from SecSSO and injects it as the bearer to SecRouter, forwarding each user's identity
+  # (x-sec-acting-user) so the gateway governs per end-user. See proxy/ + docs/governance.md.
+  secrouter-proxy:
+    build:
+      context: ./proxy
+    image: secrouter/secassist-proxy:${SECASSIST_PROXY_VERSION:-0.1.0}
+    restart: unless-stopped
+    environment:
+      LISTEN_PORT: "8088"
+      SECROUTER_BASE_URL: ${SECROUTER_BASE_URL:?set SECROUTER_BASE_URL in .env}
+      SECSSO_TOKEN_URL: ${SECSSO_TOKEN_URL:?set SECSSO_TOKEN_URL in .env}
+      SECASSIST_CLIENT_ID: ${SECASSIST_SVC_CLIENT_ID:-secassist-svc}
+      SECASSIST_CLIENT_SECRET: ${SECASSIST_SVC_CLIENT_SECRET:?set SECASSIST_SVC_CLIENT_SECRET in .env}
+      SECROUTER_SCOPE: ${SECROUTER_SCOPE:-openid secrouter}
+      # TLS to SecSSO/SecRouter uses the suite's internal CA (SecCert). For production,
+      # mount that CA into the container and point NODE_EXTRA_CA_CERTS at it (a compose
+      # override is the clean way). For a quick eval with self-signed certs, set
+      # NODE_TLS_REJECT_UNAUTHORIZED=0 in .env — never in production.
+      NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
+      NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8088/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  librechat:
+    image: ghcr.io/danny-avila/librechat:${LIBRECHAT_VERSION:-v0.8.7}
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+      secrouter-proxy:
+        condition: service_started
+    # Most config comes from .env; the container-topology values are fixed here so they
+    # always point at the compose service names regardless of what .env says.
+    env_file:
+      - .env
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3080"
+      MONGO_URI: "mongodb://mongodb:27017/LibreChat"
+      MEILI_HOST: "http://meilisearch:7700"
+      SEARCH: "true"
+      CONFIG_PATH: "/app/librechat.yaml"
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml:ro
+      - images:/app/client/public/images
+      - uploads:/app/uploads
+      - logs:/app/api/logs
+    ports:
+      - "${SECASSIST_HTTP_PORT:-3080}:3080"
+
+volumes:
+  mongo:
+  meili:
+  images:
+  uploads:
+  logs:

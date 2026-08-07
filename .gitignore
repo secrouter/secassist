@@ -1,0 +1,8 @@
+# secrets & runtime state — NEVER commit
+.env
+*.log
+data/
+
+# python (bootstrap helpers), if any
+__pycache__/
+*.pyc

@@ -1,0 +1,13 @@
+SecAssist
+Copyright 2026 Austin Probe
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+SecAssist packages and wires LibreChat (https://github.com/danny-avila/LibreChat) as the
+governed AI chat UI of the SecRouter suite — signed in via SecSSO (OIDC) and routed through
+SecRouter for per-user governance. LibreChat is a third-party project distributed under its
+own license (MIT); it is not included in this repository — its container images are pulled
+at deploy time. MongoDB and Meilisearch are likewise third-party images pulled at deploy.
+
+The only original code vendored here is the small zero-dependency SecRouter auth proxy
+under proxy/ (Apache-2.0, as above).
