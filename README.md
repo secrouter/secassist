@@ -61,6 +61,21 @@ $EDITOR .env               # set the SecSSO + SecRouter refs too
 - **SSO** setup and claims: [docs/sso.md](docs/sso.md)
 - **Per-user governance** (how delegation works, the audit trail): [docs/governance.md](docs/governance.md)
 
+## Backup
+
+The control helper exposes self-contained `backup`/`restore` verbs — the suite orchestrator
+(`secdeploy backup`) calls these and encrypts the result, but they also work standalone:
+
+```bash
+./bootstrap/secassist.sh backup  ./snap   # → librechat.archive (mongodump) + images/uploads + .env
+./bootstrap/secassist.sh restore ./snap   # mongorestore + files from ./snap (REPLACES state)
+```
+
+The dumped `.env` **must** travel with the archive: its `CREDS_KEY`/`CREDS_IV` is what decrypts
+the secrets stored *inside* the Mongo dump — restore reinstates it before `mongorestore --drop`.
+For the encrypted, whole-suite backup see [secdeploy](https://github.com/secrouter/secdeploy)'s
+runbooks.
+
 ## Notes
 
 - **Container-based.** LibreChat is a Node app with MongoDB + Meilisearch; SecAssist runs it
